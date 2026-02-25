@@ -38,7 +38,7 @@ INPUT_FILE   = Path("comment.csv")
 OUTPUT_HTML  = Path("pii_report.html")
 OUTPUT_CSV   = Path("pii_findings.csv")
 
-# Minimum Presidio confidence score to include in output (0.0 – 1.0).
+# Minimum Presidio confidence score to include in output (0.0 - 1.0).
 # Lower values catch more but produce more false positives.
 SCORE_THRESHOLD = 0.35
 
@@ -47,17 +47,17 @@ SPACY_MODEL = "en_core_web_lg"
 
 # Entities to scan for.  Custom entities (UK_NHS etc.) are added below.
 # DATE_TIME and LOCATION are intentionally excluded:
-#   DATE_TIME  – generates too many false positives from publication dates and
-#                database timestamps; a dedicated DOB recognizer is used instead.
-#   LOCATION   – "European", "South Asian" etc. are population descriptors, not PII.
+#   DATE_TIME - generates too many false positives from publication dates and
+#               database timestamps; a dedicated DOB recognizer is used instead.
+#   LOCATION  - "European", "South Asian" etc. are population descriptors, not PII.
 ENTITIES = [
     "PERSON",
     "EMAIL_ADDRESS",
     "URL",
-    "UK_NHS",         # custom – NHS number with modulus-11 checksum
+    "UK_NHS",         # custom - NHS number with modulus-11 checksum
     "UK_POSTCODE",    # custom
-    "DATE_OF_BIRTH",  # custom – dates preceded by DOB context words only
-    "PATIENT_ID",     # custom – adjust regex to match your internal ID format
+    "DATE_OF_BIRTH",  # custom - dates preceded by DOB context words only
+    "PATIENT_ID",     # custom - adjust regex to match your internal ID format
 ]
 
 # Colours used to highlight entity types in the HTML report
@@ -119,7 +119,7 @@ def _postcode_recognizer() -> PatternRecognizer:
         patterns=[
             Pattern(
                 "UK_POSTCODE",
-                r"\b[A-Z]{1,2}[0-9][0-9A-Z]?\s?[0-9][A-Z]{2}\b",
+                r"(?i)\b[A-Z]{1,2}[0-9][0-9A-Z]?\s?[0-9][A-Z]{2}\b",
                 0.75,
             ),
         ],
@@ -437,14 +437,13 @@ def _highlight_text(text: str, findings: List[Finding]) -> str:
     if not findings:
         return html_lib.escape(text)
 
-    # Sort by position; resolve overlaps greedily (highest score wins when tied)
-    sorted_f = sorted(findings, key=lambda f: (f.start, -f.score))
-    non_overlapping: List[Finding] = []
-    last_end = 0
-    for f in sorted_f:
-        if f.start >= last_end:
-            non_overlapping.append(f)
-            last_end = f.end
+    # Resolve overlaps by score (highest confidence wins), then sort for rendering.
+    by_score = sorted(findings, key=lambda f: (-f.score, f.start, f.end))
+    chosen: List[Finding] = []
+    for f in by_score:
+        if not any(f.start < c.end and f.end > c.start for c in chosen):
+            chosen.append(f)
+    non_overlapping = sorted(chosen, key=lambda f: f.start)
 
     parts: List[str] = []
     cursor = 0
@@ -615,10 +614,18 @@ def main() -> None:
 
     # ── Read comments ─────────────────────────────────────────────────────────
     comments: List[Tuple[int, str]] = []
+    required_column = "comment_on_classification"
     with INPUT_FILE.open(encoding="utf-8") as fh:
         reader = csv.DictReader(fh)
+        if not reader.fieldnames or required_column not in reader.fieldnames:
+            print(
+                f"ERROR: required column '{required_column}' not found in {INPUT_FILE}. "
+                f"Found columns: {reader.fieldnames or []}",
+                file=sys.stderr,
+            )
+            sys.exit(2)
         for i, row in enumerate(reader, start=2):   # row 1 is the header
-            text = (row.get("comment_on_classification") or "").strip()
+            text = (row.get(required_column) or "").strip()
             comments.append((i, text))
 
     print(f"Analyzing {len(comments)} comments…\n")
