@@ -422,7 +422,17 @@ def analyze_comment(
                 snippet=snippet,
             )
         )
-    return findings
+    return _choose_non_overlapping(findings)
+
+
+def _choose_non_overlapping(findings: List[Finding]) -> List[Finding]:
+    """Resolve overlapping findings by keeping the highest-scoring match."""
+    by_score = sorted(findings, key=lambda f: (-f.score, f.start, f.end))
+    chosen: List[Finding] = []
+    for f in by_score:
+        if not any(f.start < c.end and f.end > c.start for c in chosen):
+            chosen.append(f)
+    return sorted(chosen, key=lambda f: f.start)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -437,13 +447,7 @@ def _highlight_text(text: str, findings: List[Finding]) -> str:
     if not findings:
         return html_lib.escape(text)
 
-    # Resolve overlaps by score (highest confidence wins), then sort for rendering.
-    by_score = sorted(findings, key=lambda f: (-f.score, f.start, f.end))
-    chosen: List[Finding] = []
-    for f in by_score:
-        if not any(f.start < c.end and f.end > c.start for c in chosen):
-            chosen.append(f)
-    non_overlapping = sorted(chosen, key=lambda f: f.start)
+    non_overlapping = _choose_non_overlapping(findings)
 
     parts: List[str] = []
     cursor = 0
@@ -583,6 +587,11 @@ def generate_html(
 # CSV Summary
 # ──────────────────────────────────────────────────────────────────────────────
 
+def _csv_safe(value: str) -> str:
+    """Prefix values that could be interpreted as spreadsheet formulas."""
+    return f"'{value}" if value and value[0] in ("=", "+", "-", "@") else value
+
+
 def write_csv(findings: List[Finding], output_path: Path) -> None:
     with output_path.open("w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(
@@ -596,8 +605,8 @@ def write_csv(findings: List[Finding], output_path: Path) -> None:
                     "row": f.row,
                     "entity_type": f.entity_type,
                     "score": f"{f.score:.3f}",
-                    "matched_text": f.matched_text,
-                    "snippet": f.snippet,
+                    "matched_text": _csv_safe(f.matched_text),
+                    "snippet": _csv_safe(f.snippet),
                 }
             )
     print(f"  CSV findings → {output_path}")
@@ -655,6 +664,8 @@ def main() -> None:
     if all_findings:
         write_csv(all_findings, OUTPUT_CSV)
     else:
+        if OUTPUT_CSV.exists():
+            OUTPUT_CSV.unlink()
         print("  No findings — CSV not written.")
 
 

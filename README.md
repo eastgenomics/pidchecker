@@ -1,6 +1,6 @@
 # PII Checker for Genomic Variant Classification Comments
 
-A tool that scans free-text variant classification comments (exported as CSV) for personally identifiable information (PII) using [Microsoft Presidio](https://microsoft.github.io/presidio/), with custom recognizers tuned for the UK clinical genomics context.
+A tool that scans free-text variant classification comments (exported as CSV) for personally identifiable information (PII) using [Microsoft Presidio](https://microsoft.github.io/presidio/), with custom recognisers tuned for the UK clinical genomics context.
 
 ## Why
 
